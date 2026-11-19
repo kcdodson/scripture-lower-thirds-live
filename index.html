@@ -125,7 +125,7 @@ body.overlay #overlayRoot{display:flex;position:fixed;inset:0;align-items:center
     <label for="overlayLink">Overlay link — paste once in OBS</label>
     <input id="overlayLink" type="text" readonly value="">
     <div class="row" style="margin-top:10px"><button class="btn gold" id="copyOverlayBtn" type="button">Copy Overlay Link</button></div>
-    <p class="hint" style="margin-top:12px">In OBS: <b>Sources → + → Browser</b>, paste this link, set 1920×1080. Then never re-paste it — change the verse or SHOW / HIDE here and the overlay updates live in about a second.</p>
+    <p class="hint" style="margin-top:12px">In OBS: <b>Sources → + → Browser</b>, paste this link, set 1920×1080. If this source is already in OBS, right-click it and choose <b>Refresh</b>, or paste the new link (it ends in <code>v=2</code>). Paste the Lamsa verse text above, then SHOW — the overlay stays blank until the verse is pasted.</p>
   </div>
 </div>
 
@@ -193,12 +193,12 @@ if(!isOverlay){
   sizeEl.addEventListener('input',()=>{collect();saveState();});
   document.querySelectorAll('#bgSeg button').forEach(b=>b.addEventListener('click',()=>{state.bg=b.dataset.bg;renderDock();saveState(true);}));
   document.querySelectorAll('.preset').forEach(b=>b.addEventListener('click',()=>{state.ref=b.dataset.ref;state.text='';renderDock();saveState(true);toast(b.dataset.ref+' — paste the verse text');}));
-  $('showBtn').addEventListener('click',()=>{state.show=!state.show;renderDock();saveState(true);toast(state.show?'Slide is on screen':'Slide hidden');});
+  $('showBtn').addEventListener('click',()=>{if(!state.show&&!String(state.text||'').trim()){toast('Paste the Lamsa verse text first — the overlay stays blank without it');return;}state.show=!state.show;renderDock();saveState(true);toast(state.show?'Slide is on screen':'Slide hidden');});
   $('saveLibBtn').addEventListener('click',()=>{if(!state.ref.trim()&&!state.text.trim()){toast('Nothing to save yet');return;}
     state.library=[{id:'v'+Date.now(),ref:state.ref,text:state.text},...state.library].slice(0,50);renderDock();saveState(true);toast('Saved to library');});
   $('copyChatBtn').addEventListener('click',()=>{if(!state.text.trim()){toast('Paste the verse text first');return;}copyText(chatText(),'Copied — paste into Zoom chat');});
   $('studyBtn').addEventListener('click',()=>window.open(studyUrl(state.ref),'_blank'));
-  const overlayUrl=location.origin+location.pathname+'?mode=overlay';
+  const overlayUrl=location.origin+location.pathname+'?mode=overlay&v=2';
   $('overlayLink').value=overlayUrl;
   $('copyOverlayBtn').addEventListener('click',()=>copyText(overlayUrl,'Overlay link copied'));
   (async()=>{const ok=await loadState();setSync(ok,ok?undefined:'Live sync not ready — could not load state');renderDock();})();
