@@ -1,0 +1,234 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Heart Slides — Scripture Studio</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;1,500&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#0d1220;--panel:#161b2e;--panel2:#1d2440;--ink:#f4efe6;--muted:#a9adc4;--gold:#d9a441;--gold2:#f0c268;--teal:#2f7d7a;--plum:#6b4a7a;--line:#2c3352;--red:#d64545;--green:#3fae7a}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{background:var(--bg);color:var(--ink);font-family:Inter,system-ui,-apple-system,Segoe UI,sans-serif}
+/* ---------- DOCK ---------- */
+#dock{max-width:430px;margin:0 auto;padding:14px 14px 28px}
+header{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:6px 2px 12px}
+h1{font-size:19px;margin:0;letter-spacing:.2px}
+h1 span{color:var(--gold2)}
+.sub{font-size:12px;color:var(--muted);margin-top:3px}
+.pill{font-size:11px;font-weight:700;padding:5px 9px;border-radius:999px;background:#222a45;color:var(--muted);white-space:nowrap}
+.pill.live{background:#123626;color:#7fe0ae}
+.pill.err{background:#3a1b1b;color:#ff9a9a}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:12px}
+label{display:block;font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin:12px 0 6px}
+label:first-child{margin-top:0}
+input[type=text],textarea{width:100%;background:#0f1426;border:1px solid var(--line);border-radius:10px;color:var(--ink);padding:11px 12px;font-size:15px;font-family:inherit;outline:none}
+input[type=text]:focus,textarea:focus{border-color:var(--gold)}
+textarea{min-height:110px;resize:vertical;line-height:1.5}
+#showBtn{width:100%;border:0;border-radius:12px;padding:15px;font-size:17px;font-weight:800;letter-spacing:.04em;cursor:pointer;background:var(--gold);color:#241a05}
+#showBtn.on{background:var(--red);color:#fff}
+#statusLine{text-align:center;font-size:13px;color:var(--muted);margin:8px 0 0}
+#statusLine b{color:var(--ink)}
+.preview{aspect-ratio:16/9;border-radius:10px;overflow:hidden;position:relative;background:#05070f;border:1px solid var(--line);display:flex;align-items:center;justify-content:center;text-align:center}
+.preview .slideInner{padding:8%;transition:opacity .35s ease,transform .45s ease}
+.preview .ref{color:var(--gold2);font-size:11px;font-weight:700;letter-spacing:.22em;text-transform:uppercase}
+.preview .verse{font-family:"Cormorant Garamond",Georgia,serif;font-size:19px;line-height:1.3;margin:8px 0 6px}
+.preview .lam{font-size:10px;color:var(--muted);letter-spacing:.14em;text-transform:uppercase}
+.row{display:flex;gap:8px;flex-wrap:wrap}
+button{cursor:pointer;font-family:inherit}
+.btn{flex:1;min-width:120px;background:var(--panel2);color:var(--ink);border:1px solid var(--line);border-radius:10px;padding:11px 10px;font-size:14px;font-weight:600}
+.btn.gold{background:var(--gold);border-color:var(--gold);color:#241a05}
+.btn:hover{filter:brightness(1.12)}
+.preset{flex:1;background:#0f1426;border:1px solid var(--line);color:var(--ink);border-radius:999px;padding:9px 6px;font-size:13px}
+.seg{display:flex;background:#0f1426;border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.seg button{flex:1;background:transparent;border:0;color:var(--muted);padding:10px 4px;font-size:13px;font-weight:600}
+.seg button.active{background:var(--gold);color:#241a05}
+input[type=range]{width:100%;accent-color:var(--gold)}
+.hint{font-size:12px;color:var(--muted);line-height:1.55}
+.hint code{color:var(--gold2);font-size:11px;word-break:break-all}
+#overlayLink{font-size:12px}
+#toast{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);background:#222a45;border:1px solid var(--gold);color:var(--ink);padding:10px 16px;border-radius:999px;font-size:14px;opacity:0;pointer-events:none;transition:opacity .25s;z-index:50}
+#toast.show{opacity:1}
+.libItem{display:flex;gap:8px;align-items:center;background:#0f1426;border:1px solid var(--line);border-radius:10px;padding:9px 10px;margin-top:8px}
+.libItem b{font-size:13px}
+.libItem span{font-size:12px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
+.libItem button{background:var(--panel2);border:1px solid var(--line);color:var(--ink);border-radius:8px;padding:6px 9px;font-size:12px}
+.empty{font-size:13px;color:var(--muted);margin-top:6px}
+/* ---------- OVERLAY / FULL-SCREEN SLIDE ---------- */
+#overlayRoot{display:none}
+body.overlay{background:transparent}
+body.overlay #dock{display:none}
+body.overlay #overlayRoot{display:flex;position:fixed;inset:0;align-items:center;justify-content:center;text-align:center}
+#slide{width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:6vh 8vw;opacity:0;transform:translateY(36px) scale(.985);transition:opacity .6s ease,transform .65s cubic-bezier(.22,.9,.3,1);pointer-events:none}
+#slide.visible{opacity:1;transform:translateY(0) scale(1)}
+#slide.fading{opacity:0;transform:translateY(0) scale(1);transition:opacity .3s ease}
+#slide .oref{color:var(--gold2);font-weight:700;letter-spacing:.28em;text-transform:uppercase;font-size:clamp(18px,2.2vw,34px)}
+#slide .overse{font-family:"Cormorant Garamond",Georgia,serif;font-weight:600;line-height:1.25;margin:3vh 0 2.5vh;font-size:var(--verse-size,56px)}
+#slide .olam{color:#cfd3e6;letter-spacing:.22em;text-transform:uppercase;font-size:clamp(13px,1.4vw,20px)}
+#slide.bg-veil{background:radial-gradient(ellipse at center,rgba(8,11,22,.78) 0%,rgba(8,11,22,.62) 60%,rgba(8,11,22,.45) 100%)}
+#slide.bg-solid{background:#0b0e1a}
+#slide.bg-transparent{background:transparent;text-shadow:0 2px 18px rgba(0,0,0,.85),0 1px 4px rgba(0,0,0,.9)}
+#slide.bg-transparent .overse{text-shadow:0 2px 22px rgba(0,0,0,.9)}
+</style>
+</head>
+<body>
+<div id="dock">
+  <header>
+    <div><h1>Heart Slides <span>— Studio</span></h1><div class="sub">A Heart For Healing · Rev. AdaRa Walton</div></div>
+    <div class="pill" id="syncPill">Connecting…</div>
+  </header>
+
+  <div class="card">
+    <button id="showBtn" type="button">SHOW SLIDE</button>
+    <p id="statusLine">Slide is <b>hidden</b></p>
+  </div>
+
+  <div class="card">
+    <label>Live preview — full-screen slide</label>
+    <div class="preview" id="previewBox"><div class="slideInner" id="previewInner">
+      <div class="ref" id="pvRef">Colossians 4:2</div>
+      <div class="verse" id="pvVerse">Paste the verse text below — the preview fills in live.</div>
+      <div class="lam">George Lamsa Translation</div>
+    </div></div>
+    <label for="refInput">Scripture reference</label>
+    <input id="refInput" type="text" placeholder="Colossians 4:2" autocomplete="off">
+    <label for="verseInput">Verse text — George Lamsa translation</label>
+    <textarea id="verseInput" placeholder="Paste the Lamsa verse text here…"></textarea>
+    <div class="hint">Presets load only the reference — the verse stays blank for you to paste. Nothing is invented.</div>
+    <div class="row" style="margin-top:10px">
+      <button class="preset" type="button" data-ref="Colossians 4:2">Colossians 4:2</button>
+      <button class="preset" type="button" data-ref="Colossians 3:15">Colossians 3:15</button>
+    </div>
+    <label for="sizeInput">Verse size — <span id="sizeVal">56</span>px</label>
+    <input id="sizeInput" type="range" min="28" max="96" value="56">
+    <label>Slide background</label>
+    <div class="seg" id="bgSeg">
+      <button type="button" data-bg="veil" class="active">Dark veil</button>
+      <button type="button" data-bg="solid">Solid</button>
+      <button type="button" data-bg="transparent">Transparent</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <label>Saved verses</label>
+    <div class="row"><button class="btn gold" id="saveLibBtn" type="button">Save this verse to library</button></div>
+    <div id="libList"><p class="empty">No saved verses yet.</p></div>
+  </div>
+
+  <div class="card">
+    <label>Share it</label>
+    <div class="row">
+      <button class="btn" id="copyChatBtn" type="button">Copy for Zoom chat</button>
+      <button class="btn" id="studyBtn" type="button">Open Lamsa chapter</button>
+    </div>
+    <label for="overlayLink">Overlay link — paste once in OBS</label>
+    <input id="overlayLink" type="text" readonly value="">
+    <div class="row" style="margin-top:10px"><button class="btn gold" id="copyOverlayBtn" type="button">Copy Overlay Link</button></div>
+    <p class="hint" style="margin-top:12px">In OBS: <b>Sources → + → Browser</b>, paste this link, set 1920×1080. Then never re-paste it — change the verse or SHOW / HIDE here and the overlay updates live in about a second.</p>
+  </div>
+</div>
+
+<div id="overlayRoot"><div id="slide" class="bg-veil">
+  <div class="oref" id="oRef"></div>
+  <div class="overse" id="oVerse"></div>
+  <div class="olam">George Lamsa Translation</div>
+</div></div>
+<div id="toast"></div>
+<script>
+const $=id=>document.getElementById(id);
+const params=new URLSearchParams(location.search);
+const isOverlay=params.get('mode')==='overlay';
+const DEFAULT={ref:'',text:'',size:56,bg:'veil',show:false,library:[],updatedAt:0};
+let state={...DEFAULT};
+let saveTimer=null, lastSig='';
+
+function toast(msg){const t=$('toast');t.textContent=msg;t.classList.add('show');clearTimeout(t._h);t._h=setTimeout(()=>t.classList.remove('show'),2200);}
+async function copyText(txt,msg){
+  try{await navigator.clipboard.writeText(txt);toast(msg||'Copied');return true;}
+  catch(e){const ta=document.createElement('textarea');ta.value=txt;document.body.appendChild(ta);ta.select();try{document.execCommand('copy');toast(msg||'Copied');}catch(_){toast('Copy failed — select and copy manually');}ta.remove();return false;}
+}
+function sig(s){return [s.ref,s.text,s.size,s.bg,s.show].join('|');}
+async function loadState(){
+  try{const r=await fetch('/api/state',{cache:'no-store'});if(!r.ok)throw new Error('HTTP '+r.status);state={...DEFAULT,...(await r.json())};return true;}
+  catch(e){console.warn('loadState failed',e);return false;}
+}
+async function saveState(now){
+  const write=async()=>{try{const r=await fetch('/api/state',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(state)});if(!r.ok)throw new Error('HTTP '+r.status);const d=await r.json();state={...state,...d};setSync(true);}catch(e){console.warn('save failed',e);setSync(false,'Sync failed — check Blob token');}};
+  if(now){clearTimeout(saveTimer);return write();}
+  clearTimeout(saveTimer);saveTimer=setTimeout(write,400);
+}
+function setSync(ok,msg){const p=$('syncPill');if(!p)return;p.textContent=msg||(ok?'● Live sync ready':'Sync not ready');p.className='pill '+(ok?'live':'err');}
+function studyUrl(ref){
+  const m=(ref||'').trim().match(/^(.+?)\s+(\d+)(?::\d+)?/);if(!m)return 'https://www.studylight.org/bible/eng/lam/';
+  let book=m[1].toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');
+  if(book==='psalm')book='psalms';
+  return `https://www.studylight.org/bible/eng/lam/${book}/${m[2]}.html`;
+}
+function chatText(){return `📖 ${state.ref||'Scripture'} (George Lamsa Translation)\n${state.text||''}`.trim();}
+
+/* ---------- DOCK ---------- */
+if(!isOverlay){
+  const refEl=$('refInput'),verseEl=$('verseInput'),sizeEl=$('sizeInput');
+  function renderDock(){
+    refEl.value=state.ref;verseEl.value=state.text;sizeEl.value=state.size;$('sizeVal').textContent=state.size;
+    $('pvRef').textContent=state.ref||'—';
+    $('pvVerse').textContent=state.text||'Paste the verse text below — the preview fills in live.';
+    document.querySelectorAll('#bgSeg button').forEach(b=>b.classList.toggle('active',b.dataset.bg===state.bg));
+    const btn=$('showBtn');btn.textContent=state.show?'HIDE SLIDE':'SHOW SLIDE';btn.classList.toggle('on',state.show);
+    $('statusLine').innerHTML=state.show?'Slide is <b>on screen</b>':'Slide is <b>hidden</b>';
+    const list=$('libList');
+    if(!state.library.length){list.innerHTML='<p class="empty">No saved verses yet.</p>';}
+    else{list.innerHTML='';state.library.forEach(it=>{const d=document.createElement('div');d.className='libItem';
+      d.innerHTML=`<b></b><span></span>`;
+      d.querySelector('b').textContent=it.ref;d.querySelector('span').textContent=it.text||'(no text saved)';
+      const load=document.createElement('button');load.textContent='Load';load.onclick=()=>{state.ref=it.ref;state.text=it.text;renderDock();saveState(true);toast('Loaded '+it.ref);};
+      const del=document.createElement('button');del.textContent='Delete';del.onclick=()=>{state.library=state.library.filter(x=>x.id!==it.id);renderDock();saveState(true);};
+      d.append(load,del);list.appendChild(d);});}
+  }
+  function collect(){state.ref=refEl.value;state.text=verseEl.value;state.size=Number(sizeEl.value);$('sizeVal').textContent=state.size;
+    $('pvRef').textContent=state.ref||'—';$('pvVerse').textContent=state.text||'Paste the verse text below — the preview fills in live.';}
+  refEl.addEventListener('input',()=>{collect();saveState();});
+  verseEl.addEventListener('input',()=>{collect();saveState();});
+  sizeEl.addEventListener('input',()=>{collect();saveState();});
+  document.querySelectorAll('#bgSeg button').forEach(b=>b.addEventListener('click',()=>{state.bg=b.dataset.bg;renderDock();saveState(true);}));
+  document.querySelectorAll('.preset').forEach(b=>b.addEventListener('click',()=>{state.ref=b.dataset.ref;state.text='';renderDock();saveState(true);toast(b.dataset.ref+' — paste the verse text');}));
+  $('showBtn').addEventListener('click',()=>{state.show=!state.show;renderDock();saveState(true);toast(state.show?'Slide is on screen':'Slide hidden');});
+  $('saveLibBtn').addEventListener('click',()=>{if(!state.ref.trim()&&!state.text.trim()){toast('Nothing to save yet');return;}
+    state.library=[{id:'v'+Date.now(),ref:state.ref,text:state.text},...state.library].slice(0,50);renderDock();saveState(true);toast('Saved to library');});
+  $('copyChatBtn').addEventListener('click',()=>{if(!state.text.trim()){toast('Paste the verse text first');return;}copyText(chatText(),'Copied — paste into Zoom chat');});
+  $('studyBtn').addEventListener('click',()=>window.open(studyUrl(state.ref),'_blank'));
+  const overlayUrl=location.origin+location.pathname+'?mode=overlay';
+  $('overlayLink').value=overlayUrl;
+  $('copyOverlayBtn').addEventListener('click',()=>copyText(overlayUrl,'Overlay link copied'));
+  (async()=>{const ok=await loadState();setSync(ok,ok?undefined:'Live sync not ready — Blob token missing');renderDock();})();
+}
+
+/* ---------- OVERLAY ---------- */
+if(isOverlay){
+  document.body.classList.add('overlay');
+  const slide=$('slide'),oRef=$('oRef'),oVerse=$('oVerse');
+  let visible=false,currentSig='';
+  function applyOverlay(s){
+    const shouldShow=!!(s.show&&s.text&&s.text.trim());
+    slide.className='bg-'+(s.bg||'veil');
+    slide.style.setProperty('--verse-size',(s.size||56)+'px');
+    const ns=sig(s);
+    if(!shouldShow){slide.classList.remove('visible');visible=false;currentSig=ns;return;}
+    if(!visible){oRef.textContent=s.ref||'';oVerse.textContent=s.text;slide.classList.add('visible');visible=true;currentSig=ns;return;}
+    if(ns!==currentSig){
+      slide.classList.add('fading');
+      setTimeout(()=>{oRef.textContent=s.ref||'';oVerse.textContent=s.text;slide.classList.remove('fading');},300);
+      currentSig=ns;
+    }
+  }
+  async function poll(){
+    try{const r=await fetch('/api/state?_t='+Date.now(),{cache:'no-store'});if(r.ok){const d=await r.json();applyOverlay({...DEFAULT,...d});}}
+    catch(e){/* keep last slide on transient errors */}
+    setTimeout(poll,1000);
+  }
+  poll();
+}
+</script>
+</body>
+</html>
