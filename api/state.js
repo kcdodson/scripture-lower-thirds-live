@@ -87,13 +87,9 @@ export default async function handler(req, res) {
         addRandomSuffix: false,
         ...blobOpts,
       });
-      try {
-        const { blobs } = await list({ prefix: PREFIX, ...blobOpts });
-        const stale = blobs.filter((b) => b.pathname !== pathname).map((b) => b.url);
-        if (stale.length) await del(stale, blobOpts);
-      } catch (cleanupErr) {
-        console.warn('blob cleanup failed', cleanupErr);
-      }
+      // Keep prior state files. Deleting "stale" blobs right after put()
+      // can also remove the file just written if list() pathnames differ
+      // slightly, which made later overlay polls see empty state.
       return res.status(200).json(state);
     }
 
