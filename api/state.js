@@ -1,4 +1,4 @@
-import { put, get } from '@vercel/blob';
+import { put, list, del } from '@vercel/blob';
 
 const DEFAULT = {
   ref: '',
@@ -9,6 +9,8 @@ const DEFAULT = {
   library: [],
   updatedAt: 0,
 };
+
+const PREFIX = 'state/';
 
 function normalize(data) {
   return {
@@ -45,16 +47,15 @@ export default async function handler(req, res) {
   const blobOpts = hasToken ? { token } : {};
   try {
     if (req.method === 'GET') {
-      const result = await get('state.json', {
-        access: 'public',
-        useCache: false,
-        ...blobOpts,
+      const { blobs } = await list({ prefix: PREFIX, ...blobOpts });
+      if (!blobs.length) return res.status(200).json(DEFAULT);
+      blobs.sort((a, b) => {
+        const tb = new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime();
+        return tb !== 0 ? tb : b.pathname.localeCompare(a.pathname);
       });
-      if (!result || result.statusCode !== 200 || !result.stream) {
-        return res.status(200).json(DEFAULT);
-      }
-      const data = await new Response(result.stream).json();
-      return res.status(200).json(normalize(data));
+      const r = await fetch(blobs[0].url, { cache: 'no-store' });
+      if (!r.ok) return res.status(200).json(DEFAULT);
+      return res.status(200).json(normalize(await r.json()));
     }
 
     if (req.method === 'POST') {
@@ -77,14 +78,22 @@ export default async function handler(req, res) {
           : [],
         updatedAt: Date.now(),
       };
-      await put('state.json', JSON.stringify(state), {
+      // Unique pathname per write so we never hit "blob already exists"
+      // and so the public URL is not a month-cached overwrite of state.json.
+      const pathname = `${PREFIX}${state.updatedAt}.json`;
+      await put(pathname, JSON.stringify(state), {
         access: 'public',
         contentType: 'application/json',
         addRandomSuffix: false,
-        allowOverwrite: true,
-        cacheControlMaxAge: 60,
         ...blobOpts,
       });
+      try {
+        const { blobs } = await list({ prefix: PREFIX, ...blobOpts });
+        const stale = blobs.filter((b) => b.pathname !== pathname).map((b) => b.url);
+        if (stale.length) await del(stale, blobOpts);
+      } catch (cleanupErr) {
+        console.warn('blob cleanup failed', cleanupErr);
+      }
       return res.status(200).json(state);
     }
 
