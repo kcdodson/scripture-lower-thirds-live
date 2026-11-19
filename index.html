@@ -211,15 +211,17 @@ if(isOverlay){
   let visible=false,currentSig='';
   function applyOverlay(s){
     const shouldShow=!!(s.show&&s.text&&s.text.trim());
-    slide.className='bg-'+(s.bg||'veil');
+    const bg='bg-'+(s.bg||'veil');
     slide.style.setProperty('--verse-size',(s.size||56)+'px');
     const ns=sig(s);
-    if(!shouldShow){slide.classList.remove('visible');visible=false;currentSig=ns;return;}
-    if(!visible){oRef.textContent=s.ref||'';oVerse.textContent=s.text;slide.classList.add('visible');visible=true;currentSig=ns;return;}
+    if(!shouldShow){slide.className=bg;visible=false;currentSig=ns;return;}
+    if(!visible){oRef.textContent=s.ref||'';oVerse.textContent=s.text;slide.className=bg+' visible';visible=true;currentSig=ns;return;}
     if(ns!==currentSig){
-      slide.classList.add('fading');
-      setTimeout(()=>{oRef.textContent=s.ref||'';oVerse.textContent=s.text;slide.classList.remove('fading');},300);
+      slide.className=bg+' visible fading';
+      setTimeout(()=>{oRef.textContent=s.ref||'';oVerse.textContent=s.text;slide.className=bg+' visible';},300);
       currentSig=ns;
+    } else {
+      slide.className=bg+' visible';
     }
   }
   async function poll(){
