@@ -1,4 +1,4 @@
-import { put, list, del } from '@vercel/blob';
+import { put, list, head, BlobNotFoundError } from '@vercel/blob';
 
 const DEFAULT = {
   ref: '',
@@ -11,6 +11,7 @@ const DEFAULT = {
 };
 
 const PREFIX = 'state/';
+const STABLE = 'state.json';
 
 function normalize(data) {
   return {
@@ -20,42 +21,80 @@ function normalize(data) {
   };
 }
 
-export default async function handler(req, res) {
-  res.setHeader('Cache-Control', 'no-store');
-
-  // Map prefixed OIDC vars (created when a custom env-var prefix was set
-  // on the Blob store connection) to the plain names the SDK reads.
-  // These are a fallback only — the plain BLOB_STORE_ID /
-  // BLOB_WEBHOOK_PUBLIC_KEY set by a normal connection are used first.
+function blobAuth(req) {
   if (!process.env.BLOB_STORE_ID && process.env.BLOB_READ_WRITE_TOKEN_STORE_ID) {
     process.env.BLOB_STORE_ID = process.env.BLOB_READ_WRITE_TOKEN_STORE_ID;
   }
   if (!process.env.BLOB_WEBHOOK_PUBLIC_KEY && process.env.BLOB_READ_WRITE_TOKEN_WEBHOOK_PUBLIC_KEY) {
     process.env.BLOB_WEBHOOK_PUBLIC_KEY = process.env.BLOB_READ_WRITE_TOKEN_WEBHOOK_PUBLIC_KEY;
   }
-
-  // Auth: either a long-lived read-write token, OR Vercel Blob OIDC
-  // (BLOB_STORE_ID + VERCEL_OIDC_TOKEN, which Vercel injects at runtime
-  // and the @vercel/blob SDK reads automatically). Do not pass a token
-  // explicitly when none is present — let the SDK use OIDC.
   const token = process.env.BLOB_READ_WRITE_TOKEN || undefined;
   const hasToken = !!token;
   const hasOidcStore = !!process.env.BLOB_STORE_ID;
-  if (!hasToken && !hasOidcStore) {
-    return res.status(500).json({ error: 'Blob store not configured on this project — connect a Vercel Blob store to the project and redeploy' });
+  if (!hasToken && !hasOidcStore) return { error: 'Blob store not configured on this project — connect a Vercel Blob store to the project and redeploy' };
+  return { blobOpts: hasToken ? { token } : {} };
+}
+
+async function fetchJson(url) {
+  const u = url + (url.includes('?') ? '&' : '?') + 'cb=' + Date.now();
+  const r = await fetch(u, { cache: 'no-store' });
+  if (!r.ok) throw new Error('blob fetch failed: ' + r.status);
+  return r.json();
+}
+
+async function readState(blobOpts) {
+  let sawExisting = false;
+
+  try {
+    const { blobs } = await list({ prefix: PREFIX, limit: 1000, ...blobOpts });
+    const files = (blobs || []).filter((b) => /\.json$/i.test(b.pathname || ''));
+    files.sort((a, b) => {
+      const tb = new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime();
+      return tb !== 0 ? tb : String(b.pathname).localeCompare(String(a.pathname));
+    });
+    if (files.length) sawExisting = true;
+    for (const b of files.slice(0, 5)) {
+      try {
+        return normalize(await fetchJson(b.url));
+      } catch (e) {
+        console.warn('unique blob fetch failed', b.pathname, e);
+      }
+    }
+  } catch (e) {
+    console.warn('list failed', e);
   }
-  const blobOpts = hasToken ? { token } : {};
+
+  try {
+    const meta = await head(STABLE, blobOpts);
+    sawExisting = true;
+    return normalize(await fetchJson(meta.url));
+  } catch (e) {
+    if (e instanceof BlobNotFoundError || /not found/i.test(String(e?.message || e))) {
+      if (!sawExisting) return DEFAULT;
+    }
+    console.warn('stable blob read failed', e);
+  }
+
+  // State almost certainly exists but a transient list/fetch miss
+  // would otherwise look like "hide the slide" to the overlay.
+  if (sawExisting) {
+    const err = new Error('Temporary Blob read failure');
+    err.statusCode = 503;
+    throw err;
+  }
+  return DEFAULT;
+}
+
+export default async function handler(req, res) {
+  res.setHeader('Cache-Control', 'no-store');
+
+  const auth = blobAuth(req);
+  if (auth.error) return res.status(500).json({ error: auth.error });
+  const { blobOpts } = auth;
+
   try {
     if (req.method === 'GET') {
-      const { blobs } = await list({ prefix: PREFIX, ...blobOpts });
-      if (!blobs.length) return res.status(200).json(DEFAULT);
-      blobs.sort((a, b) => {
-        const tb = new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime();
-        return tb !== 0 ? tb : b.pathname.localeCompare(a.pathname);
-      });
-      const r = await fetch(blobs[0].url, { cache: 'no-store' });
-      if (!r.ok) return res.status(200).json(DEFAULT);
-      return res.status(200).json(normalize(await r.json()));
+      return res.status(200).json(await readState(blobOpts));
     }
 
     if (req.method === 'POST') {
@@ -78,18 +117,28 @@ export default async function handler(req, res) {
           : [],
         updatedAt: Date.now(),
       };
-      // Unique pathname per write so we never hit "blob already exists"
-      // and so the public URL is not a month-cached overwrite of state.json.
-      const pathname = `${PREFIX}${state.updatedAt}.json`;
-      await put(pathname, JSON.stringify(state), {
+      const uniquePath = `${PREFIX}${state.updatedAt}.json`;
+      // Unique object: never overwrites, and its public URL is not a cached
+      // copy of a previous slide. Stable state.json is a fallback if list()
+      // misses the new file on a later poll.
+      await put(uniquePath, JSON.stringify(state), {
         access: 'public',
         contentType: 'application/json',
         addRandomSuffix: false,
         ...blobOpts,
       });
-      // Keep prior state files. Deleting "stale" blobs right after put()
-      // can also remove the file just written if list() pathnames differ
-      // slightly, which made later overlay polls see empty state.
+      try {
+        await put(STABLE, JSON.stringify(state), {
+          access: 'public',
+          contentType: 'application/json',
+          addRandomSuffix: false,
+          allowOverwrite: true,
+          cacheControlMaxAge: 60,
+          ...blobOpts,
+        });
+      } catch (e) {
+        console.warn('stable state.json write failed', e);
+      }
       return res.status(200).json(state);
     }
 
@@ -97,6 +146,7 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'method not allowed' });
   } catch (e) {
     console.error(e);
-    return res.status(500).json({ error: String(e?.message || e) });
+    const status = e?.statusCode && Number(e.statusCode) >= 400 ? Number(e.statusCode) : 500;
+    return res.status(status).json({ error: String(e?.message || e) });
   }
 }
