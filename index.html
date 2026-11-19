@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
 <title>Heart Slides — Scripture Studio</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;1,500&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -70,13 +71,25 @@ body.overlay #overlayRoot{display:flex;position:fixed;inset:0;align-items:center
 #slide.bg-solid{background:#0b0e1a}
 #slide.bg-transparent{background:transparent;text-shadow:0 2px 18px rgba(0,0,0,.85),0 1px 4px rgba(0,0,0,.9)}
 #slide.bg-transparent .overse{text-shadow:0 2px 22px rgba(0,0,0,.9)}
+
+#lockBtn{border:0;background:transparent;color:var(--muted);font-size:11px;font-weight:700;cursor:pointer;padding:4px 2px;text-decoration:underline;text-underline-offset:2px}
+#lockBtn:hover{color:var(--ink)}
+.headerActions{display:flex;flex-direction:column;align-items:flex-end;gap:4px}
+#unlockGate{display:none;position:fixed;inset:0;background:rgba(8,11,22,.94);z-index:50;align-items:center;justify-content:center;padding:20px}
+#unlockGate.show{display:flex}
+#unlockGate .card{max-width:360px;width:100%}
+#unlockErr{color:var(--red);min-height:1.2em;margin-top:8px}
+body.overlay #unlockGate{display:none !important}
 </style>
 </head>
 <body>
 <div id="dock">
   <header>
     <div><h1>Heart Slides <span>— Studio</span></h1><div class="sub">A Heart For Healing · Rev. AdaRa Walton</div></div>
-    <div class="pill" id="syncPill">Connecting…</div>
+    <div class="headerActions">
+      <div class="pill" id="syncPill">Connecting…</div>
+      <button type="button" id="lockBtn" hidden>Lock</button>
+    </div>
   </header>
 
   <div class="card">
@@ -135,6 +148,18 @@ body.overlay #overlayRoot{display:flex;position:fixed;inset:0;align-items:center
   <div class="olam">George Lamsa Translation</div>
 </div></div>
 <div id="toast"></div>
+
+<div id="unlockGate">
+  <div class="card">
+    <h1>Unlock studio</h1>
+    <p class="hint">This control page is private. Enter your password to change or show slides. The overlay link stays view-only for OBS.</p>
+    <label for="controlKeyInput">Control password</label>
+    <input id="controlKeyInput" type="password" autocomplete="current-password">
+    <p id="unlockErr" class="hint"></p>
+    <button class="btn gold" id="unlockBtn" type="button" style="width:100%;margin-top:8px">Unlock</button>
+  </div>
+</div>
+
 <script>
 const $=id=>document.getElementById(id);
 const params=new URLSearchParams(location.search);
@@ -153,8 +178,34 @@ async function loadState(){
   try{const r=await fetch('/api/state',{cache:'no-store'});if(!r.ok)throw new Error('HTTP '+r.status);state={...DEFAULT,...(await r.json())};return true;}
   catch(e){console.warn('loadState failed',e);return false;}
 }
+const KEY_STORE='sltControlKey';
+function getControlKey(){try{return localStorage.getItem(KEY_STORE)||'';}catch(e){return '';}}
+function setControlKey(k){try{if(k) localStorage.setItem(KEY_STORE,k); else localStorage.removeItem(KEY_STORE);}catch(e){/* ignore */}}
+function showUnlock(msg){
+  const gate=$('unlockGate');if(!gate)return;
+  gate.classList.add('show');
+  const err=$('unlockErr');if(err) err.textContent=msg||'';
+  const lock=$('lockBtn');if(lock) lock.hidden=true;
+  setTimeout(()=>{$('controlKeyInput')&&$('controlKeyInput').focus();},50);
+}
+function hideUnlock(){
+  const gate=$('unlockGate');if(!gate)return;
+  gate.classList.remove('show');
+  const err=$('unlockErr');if(err) err.textContent='';
+  const lock=$('lockBtn');if(lock) lock.hidden=false;
+}
 async function saveState(now){
-  const write=async()=>{try{const r=await fetch('/api/state',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(state)});const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.error||('HTTP '+r.status));state={...state,...d};setSync(true);}catch(e){console.warn('save failed',e);const msg=String(e.message||e);setSync(false,/token|not configured/i.test(msg)?'Sync failed — check Blob token':'Sync failed — could not save, please retry');}};
+  const write=async()=>{
+    const key=getControlKey();
+    if(!key){showUnlock('Enter your control password to change slides');setSync(false,'Unlock to control');return false;}
+    try{
+      const r=await fetch('/api/state',{method:'POST',headers:{'Content-Type':'application/json','x-control-key':key},body:JSON.stringify(state)});
+      const d=await r.json().catch(()=>({}));
+      if(r.status===401){setControlKey('');showUnlock(d.error||'Wrong or missing control password');setSync(false,'Wrong or missing control password');return false;}
+      if(!r.ok)throw new Error(d.error||('HTTP '+r.status));
+      state={...state,...d};setSync(true);return true;
+    }catch(e){console.warn('save failed',e);const msg=String(e.message||e);setSync(false,/token|not configured/i.test(msg)?'Sync failed — check Blob token':'Sync failed — could not save, please retry');return false;}
+  };
   if(now){clearTimeout(saveTimer);return write();}
   clearTimeout(saveTimer);saveTimer=setTimeout(write,400);
 }
@@ -201,7 +252,19 @@ if(!isOverlay){
   const overlayUrl=location.origin+location.pathname+'?mode=overlay&v=2';
   $('overlayLink').value=overlayUrl;
   $('copyOverlayBtn').addEventListener('click',()=>copyText(overlayUrl,'Overlay link copied'));
-  (async()=>{const ok=await loadState();setSync(ok,ok?undefined:'Live sync not ready — could not load state');renderDock();})();
+  $('unlockBtn').addEventListener('click',()=>{
+    const k=($('controlKeyInput').value||'').trim();
+    if(!k){showUnlock('Enter your control password');return;}
+    setControlKey(k);$('controlKeyInput').value='';hideUnlock();setSync(true,'● Live sync ready');toast('Studio unlocked');
+  });
+  $('controlKeyInput').addEventListener('keydown',(e)=>{if(e.key==='Enter'){$('unlockBtn').click();}});
+  $('lockBtn').addEventListener('click',()=>{setControlKey('');showUnlock('Studio locked. Enter your password to control slides.');setSync(false,'Unlock to control');toast('Studio locked');});
+  (async()=>{
+    const ok=await loadState();
+    renderDock();
+    if(!getControlKey()){showUnlock();setSync(ok,'Unlock to control');}
+    else setSync(ok,ok?undefined:'Live sync not ready — could not load state');
+  })();
 }
 
 /* ---------- OVERLAY ---------- */

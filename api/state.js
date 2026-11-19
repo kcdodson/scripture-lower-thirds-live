@@ -1,4 +1,5 @@
 import { put, list, head, BlobNotFoundError } from '@vercel/blob';
+import { timingSafeEqual, createHash } from 'crypto';
 
 const DEFAULT = {
   ref: '',
@@ -85,6 +86,16 @@ async function readState(blobOpts) {
   return DEFAULT;
 }
 
+
+function controlKeyMatches(provided) {
+  const expected = process.env.CONTROL_KEY;
+  if (!expected) return { ok: false, reason: 'Control password is not configured on this project' };
+  const a = createHash('sha256').update(String(provided ?? ''), 'utf8').digest();
+  const b = createHash('sha256').update(String(expected), 'utf8').digest();
+  if (!timingSafeEqual(a, b)) return { ok: false, reason: 'Wrong or missing control password' };
+  return { ok: true };
+}
+
 export default async function handler(req, res) {
   res.setHeader('Cache-Control', 'no-store');
 
@@ -97,7 +108,10 @@ export default async function handler(req, res) {
       return res.status(200).json(await readState(blobOpts));
     }
 
+
     if (req.method === 'POST') {
+      const gate = controlKeyMatches(req.headers['x-control-key']);
+      if (!gate.ok) return res.status(401).json({ error: gate.reason });
       let body = req.body;
       if (typeof body === 'string') {
         try { body = JSON.parse(body); } catch { return res.status(400).json({ error: 'invalid json' }); }
