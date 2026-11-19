@@ -1,4 +1,4 @@
-import { put, list } from '@vercel/blob';
+import { put, get } from '@vercel/blob';
 
 const DEFAULT = {
   ref: '',
@@ -9,6 +9,14 @@ const DEFAULT = {
   library: [],
   updatedAt: 0,
 };
+
+function normalize(data) {
+  return {
+    ...DEFAULT,
+    ...data,
+    library: Array.isArray(data?.library) ? data.library : [],
+  };
+}
 
 export default async function handler(req, res) {
   res.setHeader('Cache-Control', 'no-store');
@@ -37,17 +45,16 @@ export default async function handler(req, res) {
   const blobOpts = hasToken ? { token } : {};
   try {
     if (req.method === 'GET') {
-      const { blobs } = await list({ prefix: 'state.json', ...blobOpts });
-      const b = blobs.find((x) => x.pathname === 'state.json');
-      if (!b) return res.status(200).json(DEFAULT);
-      const r = await fetch(b.url, { cache: 'no-store' });
-      if (!r.ok) return res.status(200).json(DEFAULT);
-      const data = await r.json();
-      return res.status(200).json({
-        ...DEFAULT,
-        ...data,
-        library: Array.isArray(data.library) ? data.library : [],
+      const result = await get('state.json', {
+        access: 'public',
+        useCache: false,
+        ...blobOpts,
       });
+      if (!result || result.statusCode !== 200 || !result.stream) {
+        return res.status(200).json(DEFAULT);
+      }
+      const data = await new Response(result.stream).json();
+      return res.status(200).json(normalize(data));
     }
 
     if (req.method === 'POST') {
@@ -74,6 +81,8 @@ export default async function handler(req, res) {
         access: 'public',
         contentType: 'application/json',
         addRandomSuffix: false,
+        allowOverwrite: true,
+        cacheControlMaxAge: 60,
         ...blobOpts,
       });
       return res.status(200).json(state);
