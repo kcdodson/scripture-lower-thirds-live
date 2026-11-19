@@ -12,13 +12,32 @@ const DEFAULT = {
 
 export default async function handler(req, res) {
   res.setHeader('Cache-Control', 'no-store');
-  const token = process.env.BLOB_READ_WRITE_TOKEN;
-  if (!token) {
-    return res.status(500).json({ error: 'BLOB_READ_WRITE_TOKEN not configured on this project' });
+
+  // Map prefixed OIDC vars (created when a custom env-var prefix was set
+  // on the Blob store connection) to the plain names the SDK reads.
+  // These are a fallback only — the plain BLOB_STORE_ID /
+  // BLOB_WEBHOOK_PUBLIC_KEY set by a normal connection are used first.
+  if (!process.env.BLOB_STORE_ID && process.env.BLOB_READ_WRITE_TOKEN_STORE_ID) {
+    process.env.BLOB_STORE_ID = process.env.BLOB_READ_WRITE_TOKEN_STORE_ID;
   }
+  if (!process.env.BLOB_WEBHOOK_PUBLIC_KEY && process.env.BLOB_READ_WRITE_TOKEN_WEBHOOK_PUBLIC_KEY) {
+    process.env.BLOB_WEBHOOK_PUBLIC_KEY = process.env.BLOB_READ_WRITE_TOKEN_WEBHOOK_PUBLIC_KEY;
+  }
+
+  // Auth: either a long-lived read-write token, OR Vercel Blob OIDC
+  // (BLOB_STORE_ID + VERCEL_OIDC_TOKEN, which Vercel injects at runtime
+  // and the @vercel/blob SDK reads automatically). Do not pass a token
+  // explicitly when none is present — let the SDK use OIDC.
+  const token = process.env.BLOB_READ_WRITE_TOKEN || undefined;
+  const hasToken = !!token;
+  const hasOidcStore = !!process.env.BLOB_STORE_ID;
+  if (!hasToken && !hasOidcStore) {
+    return res.status(500).json({ error: 'Blob store not configured on this project — connect a Vercel Blob store to the project and redeploy' });
+  }
+  const blobOpts = hasToken ? { token } : {};
   try {
     if (req.method === 'GET') {
-      const { blobs } = await list({ prefix: 'state.json' });
+      const { blobs } = await list({ prefix: 'state.json', ...blobOpts });
       const b = blobs.find((x) => x.pathname === 'state.json');
       if (!b) return res.status(200).json(DEFAULT);
       const r = await fetch(b.url, { cache: 'no-store' });
@@ -55,6 +74,7 @@ export default async function handler(req, res) {
         access: 'public',
         contentType: 'application/json',
         addRandomSuffix: false,
+        ...blobOpts,
       });
       return res.status(200).json(state);
     }
